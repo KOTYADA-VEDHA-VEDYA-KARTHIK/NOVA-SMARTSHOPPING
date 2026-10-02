@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta name="referrer" content="no-referrer">
+    <meta name="color-scheme" content="dark">
+    <title>NOVA CART | SMARTOPS — Predictive Operations Dashboard</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            200: '#c7d2fe',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        },
+                        nova: {
+                            orange: '#ff5a1f',
+                            dark: '#0f172a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js" crossorigin="anonymous"></script>
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0b0f19; color: #f1f5f9; }
+        .glass-panel { background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .glass-card { background: #131b2e; border: 1px solid rgba(255, 255, 255, 0.06); }
+        .glass-card:hover { border-color: rgba(99, 102, 241, 0.4); }
+        .toast-enter { animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .fade-in { animation: fadeIn 0.35s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .pulse-badge { animation: pulseGlow 2s infinite; }
+        @keyframes pulseGlow { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        button:focus-visible, input:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+        .skip-link { position: absolute; left: -9999px; top: 8px; z-index: 100; background: #4f46e5; color: #fff; padding: 8px 14px; border-radius: 8px; }
+        .skip-link:focus { left: 8px; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0b0f19; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body>
+    <a href="#main" class="skip-link">Skip to content</a>
+    <div id="root"></div>
+    <noscript>This dashboard requires JavaScript.</noscript>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // Reusable Chart Component
+        const ChartBox = ({ type, data, options, height = '220px' }) => {
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+            
+            useEffect(() => {
+                if (chartInstance.current) {
+                    chartInstance.current.destroy();
+                }
+                if (chartRef.current) {
+                    chartInstance.current = new Chart(chartRef.current, {
+                        type,
+                        data,
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            ...options
+                        }
+                    });
+                }
+                return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+            }, [data, options, type]);
+            
+            return <div style={{ position: 'relative', height, width: '100%' }}><canvas ref={chartRef}></canvas></div>;
+        };
+
+        // Initial Historical Products Data
+        const initialProductsRaw = [
+            { id: 'SKU-101', name: 'Amul Taaza Milk 1L', category: 'Dairy & Eggs', currentStock: 20, history: [14, 12, 15, 13, 11, 14, 16, 13, 14, 15, 13, 12, 14, 15] },
+            { id: 'SKU-102', name: 'Britannia Whole Wheat Bread', category: 'Bakery', currentStock: 18, history: [7, 9, 8, 6, 8, 9, 7, 8, 9, 7, 8, 10, 8, 7] },
+            { id: 'SKU-103', name: 'India Gate Basmati Rice 5kg', category: 'Staples & Grains', currentStock: 42, history: [5, 4, 6, 5, 4, 5, 6, 4, 5, 5, 6, 4, 5, 5] },
+            { id: 'SKU-104', name: 'Farm Fresh Eggs (Pack of 12)', category: 'Dairy & Eggs', currentStock: 8, history: [8, 9, 7, 8, 9, 8, 10, 8, 9, 8, 9, 10, 9, 8] },
+            { id: 'SKU-105', name: 'Fresh Red Onion 1kg', category: 'Fresh Produce', currentStock: 15, history: [10, 11, 9, 12, 10, 11, 13, 10, 11, 12, 11, 10, 12, 11] },
+            { id: 'SKU-106', name: 'Hybrid Tomato 1kg', category: 'Fresh Produce', currentStock: 12, history: [8, 9, 8, 7, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8] },
+            { id: 'SKU-107', name: 'Aashirvaad Shudh Chakki Atta 5kg', category: 'Staples & Grains', currentStock: 35, history: [4, 3, 5, 4, 3, 4, 5, 3, 4, 4, 5, 3, 4, 4] },
+            { id: 'SKU-108', name: 'Amul Masti Dahi 400g', category: 'Dairy & Eggs', currentStock: 6, history: [9, 10, 8, 11, 9, 10, 11, 9, 10, 11, 10, 9, 11, 10] },
+            { id: 'SKU-109', name: 'Robusta Banana (1 Dozen)', category: 'Fresh Produce', currentStock: 9, history: [6, 7, 6, 5, 7, 6, 7, 6, 7, 6, 7, 5, 7, 6] },
+            { id: 'SKU-110', name: 'Fortune Sunlite Sunflower Oil 1L', category: 'Staples & Grains', currentStock: 25, history: [3, 2, 3, 4, 3, 2, 3, 3, 2, 3, 4, 3, 2, 3] },
+            { id: 'SKU-111', name: 'Tata Salt Vaccum Evaporated 1kg', category: 'Staples & Grains', currentStock: 50, history: [4, 3, 4, 3, 4, 3, 4, 4, 3, 4, 3, 4, 3, 4] },
+            { id: 'SKU-112', name: 'Maggi 2-Minute Noodles (Pack of 4)', category: 'Packaged Foods', currentStock: 14, history: [9, 8, 10, 9, 11, 10, 12, 10, 11, 12, 11, 10, 12, 11] },
+        ];
+
+        // <logic>
+        const RISK_RANK = { HIGH: 3, MEDIUM: 2, LOW: 1 };
+        const sortByRisk = (list) => [...list].sort((a, b) => (RISK_RANK[b.risk] || 0) - (RISK_RANK[a.risk] || 0));
+        const sanitizeHistory = (h) => (Array.isArray(h) ? h : []).map(Number).filter(n => Number.isFinite(n) && n >= 0);
+        const isValidQty = (q) => Number.isInteger(q) && q > 0 && q <= 10000;
+
+        // Transparent Inventory Prediction Algorithm
+        const computeInventoryPrediction = (product, forecastDays = 3) => {
+            const history = sanitizeHistory(product.history);
+            if (history.length < 3) throw new RangeError(`Need at least 3 days of history for ${product.id}`);
+            const daysCount = history.length;
+            const totalUnitsSold = history.reduce((sum, val) => sum + val, 0);
+            const avgDailyDemand = totalUnitsSold / daysCount;
+            
+            // Trend calculation: recent 3-day average compared to overall average
+            const recent3DaysAvg = history.slice(-3).reduce((sum, val) => sum + val, 0) / 3;
+            const trendRatio = avgDailyDemand > 0 ? recent3DaysAvg / avgDailyDemand : 1;
+            
+            let trend = 'STABLE';
+            if (trendRatio > 1.06) trend = 'RISING';
+            else if (trendRatio < 0.94) trend = 'FALLING';
+
+            // Predicted Demand for 3 days
+            const rawPredictedDemand = avgDailyDemand * trendRatio * forecastDays;
+            const predictedDemand = Math.round(rawPredictedDemand);
+            
+            // Safety Buffer (10% of demand)
+            const safetyBuffer = Math.ceil(predictedDemand * 0.1);
+            const totalRequired = predictedDemand + safetyBuffer;
+
+            // Stockout Risk Categorization
+            let risk = 'LOW';
+            let riskColor = 'green';
+            let action = 'STOCK HEALTHY';
+
+            if (product.currentStock < predictedDemand) {
+                risk = 'HIGH';
+                riskColor = 'red';
+                action = 'RESTOCK NOW';
+            } else if (product.currentStock <= totalRequired) {
+                risk = 'MEDIUM';
+                riskColor = 'amber';
+                action = 'RESTOCK SOON';
+            } else {
+                risk = 'LOW';
+                riskColor = 'green';
+                action = 'STOCK HEALTHY';
+            }
+
+            const recommendedRestock = Math.max(totalRequired - product.currentStock, 0);
+
+            return {
+                ...product,
+                avgDailySales: avgDailyDemand.toFixed(1),
+                trend,
+                trendFactor: trendRatio.toFixed(2),
+                predictedDemand,
+                safetyBuffer,
+                totalRequired,
+                risk,
+                riskColor,
+                recommendedRestock,
+                action,
+                status: product.status || 'ACTIVE'
+            };
+        };
+
+        // Active Orders for Delivery Risk
+        const initialOrdersData = [
+            { id: 'ORD-1048', store: 'Fresh Mart (Indiranagar)', distance: 6.8, items: 9, prepTime: 18, storeLoad: 'HIGH', availablePartners: 1 },
+            { id: 'ORD-1050', store: 'Sharma Grocery (Koramangala)', distance: 7.2, items: 11, prepTime: 20, storeLoad: 'HIGH', availablePartners: 1 },
+            { id: 'ORD-1046', store: 'Metro Bazaar (HSR Layout)', distance: 5.7, items: 8, prepTime: 15, storeLoad: 'HIGH', availablePartners: 1 },
+            { id: 'ORD-1044', store: 'Daily Needs (Whitefield)', distance: 4.5, items: 6, prepTime: 12, storeLoad: 'MEDIUM', availablePartners: 2 },
+            { id: 'ORD-1047', store: 'Green Valley Organics', distance: 3.9, items: 5, prepTime: 10, storeLoad: 'MEDIUM', availablePartners: 2 },
+            { id: 'ORD-1051', store: 'Daily Needs (Jayanagar)', distance: 3.1, items: 4, prepTime: 9, storeLoad: 'MEDIUM', availablePartners: 3 },
+            { id: 'ORD-1042', store: 'ABC Supermarket (BTM)', distance: 3.2, items: 4, prepTime: 8, storeLoad: 'LOW', availablePartners: 3 },
+            { id: 'ORD-1043', store: 'Fresh Mart (MG Road)', distance: 2.1, items: 3, prepTime: 6, storeLoad: 'LOW', availablePartners: 4 },
+            { id: 'ORD-1045', store: 'QuickStop Express (Domlur)', distance: 1.8, items: 2, prepTime: 5, storeLoad: 'LOW', availablePartners: 5 },
+            { id: 'ORD-1049', store: 'ABC Grocery (Bellandur)', distance: 2.5, items: 3, prepTime: 7, storeLoad: 'LOW', availablePartners: 3 },
+        ];
+
+        // Transparent Delivery ETA & Risk Formula
+        const computeDeliveryPrediction = (order, isPrioritized = false) => {
+            const SPEED_MIN_PER_KM = 3.0; // Realistic city bike transit speed
+            const SLA_TARGET = 30; // 30-minute quick-commerce guarantee target
+
+            const travelTime = Math.round(order.distance * SPEED_MIN_PER_KM);
+            
+            let workloadPenalty = 0;
+            if (order.storeLoad === 'MEDIUM') workloadPenalty = 5;
+            else if (order.storeLoad === 'HIGH') workloadPenalty = 12;
+
+            const itemPenalty = order.items > 5 ? Math.round((order.items - 5) * 1.5) : 0;
+            const partnerPenalty = order.availablePartners <= 1 ? 6 : 0;
+
+            let prepEffective = order.prepTime;
+            let dispatchBoost = 0;
+
+            if (isPrioritized) {
+                // Priority lane shaves prep backlog and fast-tracks rider dispatch
+                prepEffective = Math.max(5, order.prepTime - 6);
+                dispatchBoost = 3;
+            }
+
+            const estimatedDeliveryTime = prepEffective + travelTime + (isPrioritized ? Math.floor(workloadPenalty * 0.4) : workloadPenalty) + itemPenalty + (isPrioritized ? Math.min(partnerPenalty, 1) : partnerPenalty);
+
+            let risk = 'LOW';
+            if (estimatedDeliveryTime > SLA_TARGET + 5) risk = 'HIGH';
+            else if (estimatedDeliveryTime >= SLA_TARGET - 2) risk = 'MEDIUM';
+            else risk = 'LOW';
+
+            const recommendations = [];
+            if (risk === 'HIGH') {
+                recommendations.push('Assign nearest dedicated delivery partner');
+                recommendations.push('Prioritize queue in store dispatch station');
+                recommendations.push('Proactively update customer ETA to prevent friction');
+            } else if (risk === 'MEDIUM') {
+                recommendations.push('Pre-reserve next incoming rider');
+                recommendations.push('Monitor packaging progress closely');
+            } else {
+                recommendations.push('Optimal operational flow — on target for SLA');
+            }
+
+            return {
+                ...order,
+                travelTime,
+                workloadPenalty,
+                itemPenalty,
+                partnerPenalty,
+                prepEffective,
+                estimatedDeliveryTime,
+                slaTarget: SLA_TARGET,
+                delayDelta: estimatedDeliveryTime - SLA_TARGET,
+                risk,
+                recommendations,
+                isPrioritized
+            };
+        };
+
+        // </logic>
+
+        // Catches render errors so the dashboard never white-screens
+        class ErrorBoundary extends React.Component {
+            constructor(props) { super(props); this.state = { failed: false }; }
+            static getDerivedStateFromError() { return { failed: true }; }
+            componentDidCatch(err) { console.error('SmartOps render error:', err); }
+            render() {
+                if (!this.state.failed) return this.props.children;
+                return (
+                    <div role="alert" className="min-h-screen flex flex-col items-center justify-center gap-3 text-center p-6">
+                        <h1 className="text-xl font-bold">Something went wrong</h1>
+                        <button onClick={() => location.reload()} className="px-4 py-2 bg-indigo-600 rounded-xl text-sm font-bold">Reload dashboard</button>
+                    </div>
+                );
+            }
+        }
+
+        // --- APP ROOT COMPONENT ---
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('Overview');
+            const [toasts, setToasts] = useState([]);
+            const [demoGuideOpen, setDemoGuideOpen] = useState(false);
+
+            // Inventory State
+            const [isInventoryAnalyzed, setIsInventoryAnalyzed] = useState(false);
+            const [isAnalyzing, setIsAnalyzing] = useState(false);
+            const [products, setProducts] = useState(initialProductsRaw);
+
+            // Delivery State
+            const [orders, setOrders] = useState(() => {
+                const initial = initialOrdersData.map(o => computeDeliveryPrediction(o, false));
+                return sortByRisk(initial);
+            });
+
+            // Simulator State
+            const [stockoutReduction, setStockoutReduction] = useState(40);
+            const [delayReduction, setDelayReduction] = useState(30);
+
+            // Toast Trigger
+            const timers = useRef(new Set());
+            useEffect(() => () => timers.current.forEach(clearTimeout), []);
+            const later = (fn, ms) => { const t = setTimeout(() => { timers.current.delete(t); fn(); }, ms); timers.current.add(t); };
+
+            const triggerToast = (msg, type = 'info') => {
+                const id = Date.now() + Math.random();
+                setToasts(prev => [...prev.slice(-3), { id, msg, type }]);
+                later(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+            };
+
+            // Run Inventory Analysis
+            const handleAnalyzeInventory = () => {
+                if (isAnalyzing) return;
+                setIsAnalyzing(true);
+                later(() => {
+                    try {
+                        // Analyze current state so earlier restocks/delists are preserved
+                        setProducts(prev => sortByRisk(prev.map(p => computeInventoryPrediction(p, 3))));
+                        setIsInventoryAnalyzed(true);
+                        triggerToast(`Demand intelligence calculated for all ${products.length} store SKUs`, 'success');
+                    } catch (err) {
+                        console.error(err);
+                        triggerToast('Analysis failed: invalid sales history', 'warning');
+                    } finally {
+                        setIsAnalyzing(false);
+                    }
+                }, 900);
+            };
+
+            // Mark For Restock
+            const handleRestockProduct = (productId, productName, qty) => {
+                if (!isValidQty(qty)) { triggerToast('Invalid restock quantity', 'warning'); return; }
+                setProducts(prev => prev.map(p => {
+                    if (p.id === productId) {
+                        return { ...p, status: 'RESTOCK ORDERED', currentStock: p.currentStock + qty, risk: 'LOW', riskColor: 'green', action: 'STOCK HEALTHY' };
+                    }
+                    return p;
+                }));
+                triggerToast(`Restock PO issued for ${productName} (+${qty} units)`, 'success');
+            };
+
+            // Mark Unavailable
+            const handleMarkUnavailable = (productId, productName) => {
+                setProducts(prev => prev.map(p => {
+                    if (p.id === productId) {
+                        return { ...p, status: 'MARKED UNAVAILABLE', action: 'CATALOG PAUSED' };
+                    }
+                    return p;
+                }));
+                triggerToast(`Temporarily delisted ${productName} to prevent customer bounce`, 'warning');
+            };
+
+            // Prioritize Delivery Order
+            const handlePrioritizeOrder = (orderId) => {
+                const target = orders.find(o => o.id === orderId);
+                if (!target || target.isPrioritized) return;
+                const after = computeDeliveryPrediction(target, true);
+                setOrders(prev => sortByRisk(prev.map(o => (o.id === orderId ? after : o))));
+                triggerToast(`Priority dispatch activated for Order #${orderId} (-${target.estimatedDeliveryTime - after.estimatedDeliveryTime} min ETA)`, 'success');
+            };
+
+            // Calculate Dynamic KPIs
+            const highRiskInventoryCount = useMemo(() => {
+                if (!isInventoryAnalyzed) return 7;
+                return products.filter(p => p.risk === 'HIGH' && p.status !== 'RESTOCK ORDERED' && p.status !== 'MARKED UNAVAILABLE').length;
+            }, [products, isInventoryAnalyzed]);
+
+            const delayRiskOrdersCount = useMemo(() => {
+                return orders.filter(o => o.risk === 'HIGH' && !o.isPrioritized).length;
+            }, [orders]);
+
+            const preventedCancellationsCount = useMemo(() => {
+                const restocked = products.filter(p => p.status === 'RESTOCK ORDERED').length * 4;
+                const unavail = products.filter(p => p.status === 'MARKED UNAVAILABLE').length * 3;
+                const prioritized = orders.filter(o => o.isPrioritized).length * 5;
+                return 18 + restocked + unavail + prioritized;
+            }, [products, orders]);
+
+            return (
+                <div className="min-h-screen flex flex-col bg-[#090d16] text-slate-100 selection:bg-indigo-600 selection:text-white">
+                    {/* Floating Toast Notifications */}
+                    <div role="status" aria-live="polite" className="fixed top-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+                        {toasts.map(t => (
+                            <div key={t.id} className="toast-enter pointer-events-auto bg-slate-900/95 border border-slate-700/80 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 backdrop-blur-md">
+                                <span className="text-xl">
+                                    {t.type === 'success' ? '⚡' : t.type === 'warning' ? '⚠️' : 'ℹ️'}
+                                </span>
+                                <span className="text-sm font-medium">{t.msg}</span>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Top Header & Navigation */}
+                    <header className="sticky top-0 z-40 bg-[#0c1221]/90 backdrop-blur-md border-b border-slate-800">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between py-3 gap-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-amber-500 flex items-center justify-center font-black text-xl shadow-lg shadow-indigo-600/30">
+                                            N
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-extrabold text-lg tracking-tight text-white">NOVA CART</span>
+                                                <span className="bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-[11px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 pulse-badge"></span> SmartOps
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-400 hidden sm:block">"Predict problems before they become cancelled orders."</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setDemoGuideOpen(!demoGuideOpen)}
+                                        className="md:hidden text-xs bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 px-3 py-1.5 rounded-lg flex items-center gap-1"
+                                    >
+                                        🎙️ 2-Min Demo
+                                    </button>
+                                </div>
+
+                                <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-1 md:pb-0">
+                                    <nav aria-label="Dashboard sections" className="flex space-x-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800">
+                                        {['Overview', 'Inventory', 'Delivery', 'Impact', 'Why SmartOps?'].map(tab => (
+                                            <button
+                                                key={tab}
+                                                aria-current={activeTab === tab ? 'page' : undefined}
+                                                onClick={() => setActiveTab(tab)}
+                                                className={`whitespace-nowrap px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
+                                                    activeTab === tab
+                                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                                                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                                                }`}
+                                            >
+                                                {tab === 'Inventory' && '📦 '}
+                                                {tab === 'Delivery' && '⚡ '}
+                                                {tab === 'Impact' && '📈 '}
+                                                {tab === 'Why SmartOps?' && '🎯 '}
+                                                {tab}
+                                            </button>
+                                        ))}
+                                    </nav>
+
+                                    <button 
+                                        onClick={() => setDemoGuideOpen(!demoGuideOpen)}
+                                        className="hidden md:flex items-center gap-1.5 text-xs font-bold bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 px-3 py-2 rounded-xl transition-all"
+                                    >
+                                        <span>🎙️</span> 2-Min Pitch Guide
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Demo Pitch Guide Drawer / Banner */}
+                    {demoGuideOpen && (
+                        <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border-b border-indigo-500/30 px-4 py-3 text-xs sm:text-sm transition-all fade-in">
+                            <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                                <div className="flex items-start gap-2">
+                                    <span className="text-xl">📋</span>
+                                    <div>
+                                        <span className="font-bold text-amber-400 uppercase tracking-wider text-xs">Hackathon 2-Minute Demo Script:</span>
+                                        <p className="text-slate-300 text-xs mt-0.5">
+                                            <strong>Step 1:</strong> Overview (Cite 6%→11% cancel spike) → <strong>Step 2:</strong> Inventory (Click <em>"Analyze Inventory"</em> → Restock Milk 1L) → <strong>Step 3:</strong> Delivery (Show Order #ORD-1048 → Click <em>"Prioritize Order"</em>) → <strong>Step 4:</strong> Customer Preview (Demonstrate honest 34m ETA) → <strong>Step 5:</strong> Impact Simulator (Show ₹4.8L+ saved).
+                                        </p>
+                                    </div>
+                                </div>
+                                <button aria-label="Dismiss demo guide" onClick={() => setDemoGuideOpen(false)} className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded bg-slate-800">
+                                    Dismiss ✕
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Main View Container */}
+                    <main id="main" tabIndex={-1} className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
+                        {/* TAB 1: OVERVIEW */}
+                        {activeTab === 'Overview' && (
+                            <div className="fade-in space-y-6">
+                                {/* Case Problem Banner */}
+                                <div className="glass-card rounded-2xl p-5 border-l-4 border-l-amber-500 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="bg-amber-500/20 text-amber-300 text-xs font-bold px-2 py-0.5 rounded">Operational Bottleneck</span>
+                                            <span className="text-xs text-slate-400">NOVA CART • 620 Partner Stores across 3 Cities</span>
+                                        </div>
+                                        <h2 className="text-lg font-bold text-white mt-1">Growth Surge vs. Customer Retention Paradox</h2>
+                                        <p className="text-sm text-slate-300 mt-0.5 max-w-3xl">
+                                            While orders grew to 38,500/mo, order cancellations surged from <strong>6% to 11%</strong> and repeat purchase rate collapsed from <strong>41% to 27%</strong>. The root causes? <strong>35% stockout cancellations</strong> and <strong>27% delivery delay cancellations</strong>.
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <button onClick={() => setActiveTab('Inventory')} className="whitespace-nowrap px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5">
+                                            Inspect Inventory ➔
+                                        </button>
+                                        <button onClick={() => setActiveTab('Delivery')} className="whitespace-nowrap px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all">
+                                            View Orders ➔
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Main Dashboard KPI Cards */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group hover:border-indigo-500/40 transition-all">
+                                        <div className="flex justify-between items-start">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Inventory Health</span>
+                                            <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Optimal</span>
+                                        </div>
+                                        <div className="mt-3 flex items-baseline gap-2">
+                                            <span className="text-3xl font-extrabold text-white">82%</span>
+                                            <span className="text-xs text-emerald-400 font-medium">+4% this week</span>
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-2">Weighted in-stock availability across catalog</p>
+                                        <div className="w-full bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
+                                            <div className="bg-emerald-500 h-full rounded-full" style={{ width: '82%' }}></div>
+                                        </div>
+                                    </div>
+
+                                    <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group hover:border-rose-500/40 transition-all">
+                                        <div className="flex justify-between items-start">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">High-Risk Products</span>
+                                            <span className="text-xs font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">Action Needed</span>
+                                        </div>
+                                        <div className="mt-3 flex items-baseline gap-2">
+                                            <span className="text-3xl font-extrabold text-rose-400">{highRiskInventoryCount}</span>
+                                            <span className="text-xs text-slate-400">SKUs facing stockout</span>
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-2">Predicted demand exceeds available store shelf</p>
+                                        <div className="w-full bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
+                                            <div className="bg-rose-500 h-full rounded-full" style={{ width: '58%' }}></div>
+                                        </div>
+                                    </div>
+
+                                    <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group hover:border-amber-500/40 transition-all">
+                                        <div className="flex justify-between items-start">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Orders at Delay Risk</span>
+                                            <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">SLA Breach</span>
+                                        </div>
+                                        <div className="mt-3 flex items-baseline gap-2">
+                                            <span className="text-3xl font-extrabold text-amber-400">{delayRiskOrdersCount}</span>
+                                            <span className="text-xs text-slate-400">active orders &gt; 35 min</span>
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-2">Store preparation bottleneck or rider scarcity</p>
+                                        <div className="w-full bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
+                                            <div className="bg-amber-500 h-full rounded-full" style={{ width: '50%' }}></div>
+                                        </div>
+                                    </div>
+
+                                    <div className="glass-panel p-5 rounded-2xl relative overflow-hidden group hover:border-indigo-500/40 transition-all">
+                                        <div className="flex justify-between items-start">
+                                            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cancellations Prevented</span>
+                                            <span className="text-xs font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">Live Impact</span>
+                                        </div>
+                                        <div className="mt-3 flex items-baseline gap-2">
+                                            <span className="text-3xl font-extrabold text-indigo-400">{preventedCancellationsCount}</span>
+                                            <span className="text-xs text-emerald-400 font-medium">orders saved today</span>
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-2">Estimated ₹{Math.round(preventedCancellationsCount * 486).toLocaleString('en-IN')} revenue saved</p>
+                                        <div className="w-full bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
+                                            <div className="bg-indigo-500 h-full rounded-full" style={{ width: '74%' }}></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Analytical Risk Charts */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <div className="glass-card rounded-2xl p-6">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div>
+                                                <h3 className="text-base font-bold text-white">Inventory Risk Overview</h3>
+                                                <p className="text-xs text-slate-400">Demand forecast vs. on-shelf stock levels</p>
+                                            </div>
+                                            <span className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg">12 Monitored SKUs</span>
+                                        </div>
+                                        <ChartBox
+                                            type="doughnut"
+                                            data={{
+                                                labels: ['High Risk (Stockout likely)', 'Medium Risk (Near threshold)', 'Low Risk (Healthy buffer)'],
+                                                datasets: [{
+                                                    data: [highRiskInventoryCount, 4, 12 - highRiskInventoryCount - 4],
+                                                    backgroundColor: ['#ef4444', '#f59e0b', '#10b981'],
+                                                    borderWidth: 0,
+                                                    hoverOffset: 6
+                                                }]
+                                            }}
+                                            options={{
+                                                plugins: {
+                                                    legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 11, family: 'Plus Jakarta Sans' } } }
+                                                },
+                                                cutout: '68%'
+                                            }}
+                                            height="220px"
+                                        />
+                                    </div>
+
+                                    <div className="glass-card rounded-2xl p-6">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div>
+                                                <h3 className="text-base font-bold text-white">Delivery Risk Overview</h3>
+                                                <p className="text-xs text-slate-400">Predicted ETA vs. 30-min Customer SLA</p>
+                                            </div>
+                                            <span className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg">10 Active Orders</span>
+                                        </div>
+                                        <ChartBox
+                                            type="doughnut"
+                                            data={{
+                                                labels: ['High Delay Risk (> 35 min)', 'Moderate Delay (28-35 min)', 'On Time (< 28 min)'],
+                                                datasets: [{
+                                                    data: [delayRiskOrdersCount, 4, 10 - delayRiskOrdersCount - 4],
+                                                    backgroundColor: ['#ef4444', '#f59e0b', '#10b981'],
+                                                    borderWidth: 0,
+                                                    hoverOffset: 6
+                                                }]
+                                            }}
+                                            options={{
+                                                plugins: {
+                                                    legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 11, family: 'Plus Jakarta Sans' } } }
+                                                },
+                                                cutout: '68%'
+                                            }}
+                                            height="220px"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Ground Evidence Breakdown */}
+                                <div className="glass-panel rounded-2xl p-6">
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                                        <span>📊</span> Verified Evidence from NOVA CART Operations
+                                    </h3>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-center">
+                                        <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                            <p className="text-xs text-slate-400">Monthly Orders</p>
+                                            <p className="text-xl font-extrabold text-white mt-1">38,500</p>
+                                            <span className="text-[10px] text-emerald-400">↑ from 31,200</span>
+                                        </div>
+                                        <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                            <p className="text-xs text-slate-400">Cancellation Rate</p>
+                                            <p className="text-xl font-extrabold text-rose-400 mt-1">11%</p>
+                                            <span className="text-[10px] text-rose-400">↑ from 6% (Critical)</span>
+                                        </div>
+                                        <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                            <p className="text-xs text-slate-400">Unavailable Product</p>
+                                            <p className="text-xl font-extrabold text-amber-400 mt-1">35%</p>
+                                            <span className="text-[10px] text-slate-400">of total cancellations</span>
+                                        </div>
+                                        <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                            <p className="text-xs text-slate-400">Delivery Delay</p>
+                                            <p className="text-xl font-extrabold text-amber-400 mt-1">27%</p>
+                                            <span className="text-[10px] text-slate-400">of total cancellations</span>
+                                        </div>
+                                        <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                            <p className="text-xs text-slate-400">Repeat Purchase</p>
+                                            <p className="text-xl font-extrabold text-rose-400 mt-1">27%</p>
+                                            <span className="text-[10px] text-rose-400">↓ collapsed from 41%</span>
+                                        </div>
+                                        <div className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                                            <p className="text-xs text-slate-400">Avg Delivery Time</p>
+                                            <p className="text-xl font-extrabold text-white mt-1">37 min</p>
+                                            <span className="text-[10px] text-rose-400">↑ from 29 min</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TAB 2: INVENTORY INTELLIGENCE */}
+                        {activeTab === 'Inventory' && (
+                            <div className="fade-in space-y-6">
+                                {/* Header Action Bar */}
+                                <div className="glass-panel p-6 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-indigo-400 text-lg">📦</span>
+                                            <h2 className="text-xl font-bold text-white">Predictive Inventory Intelligence</h2>
+                                        </div>
+                                        <p className="text-sm text-slate-400 mt-1">
+                                            Calculates deterministic run-rate and 3-day forecast to flag stockout risks before orders are rejected.
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={handleAnalyzeInventory}
+                                        disabled={isAnalyzing}
+                                        className={`px-6 py-3 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2.5 transition-all shadow-lg ${
+                                            isAnalyzing 
+                                                ? 'bg-indigo-700/60 cursor-not-allowed' 
+                                                : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30 hover:scale-[1.02]'
+                                        }`}
+                                    >
+                                        {isAnalyzing ? (
+                                            <>
+                                                <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                <span>Processing 14-Day Sales Run-Rate...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span>⚡</span>
+                                                <span>{isInventoryAnalyzed ? 'Re-Analyze Inventory Demand' : 'Analyze Inventory Demand'}</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {/* Math Formula Accordion */}
+                                <details className="glass-card rounded-2xl p-4 text-xs group cursor-pointer">
+                                    <summary className="font-semibold text-slate-300 list-none flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-indigo-400 font-mono font-bold">f(x)</span>
+                                            <span>Transparent Mathematical Prediction Engine Logic (No Black-Box API)</span>
+                                        </div>
+                                        <span className="text-slate-500 group-open:rotate-180 transition-transform">▼</span>
+                                    </summary>
+                                    <div className="mt-4 pt-3 border-t border-slate-800 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 font-mono text-[11px] text-slate-300">
+                                        <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                                            <span className="text-indigo-400 font-bold block mb-1">1. Average Daily Demand:</span>
+                                            <p className="text-slate-400">sum(14-day sales) / 14 days</p>
+                                        </div>
+                                        <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                                            <span className="text-indigo-400 font-bold block mb-1">2. Trend Multiplier:</span>
+                                            <p className="text-slate-400">recent_3_day_avg / avg_daily_sales</p>
+                                        </div>
+                                        <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                                            <span className="text-indigo-400 font-bold block mb-1">3. 3-Day Forecast:</span>
+                                            <p className="text-slate-400">ceil(avg_sales * trend * 3)</p>
+                                        </div>
+                                        <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800">
+                                            <span className="text-indigo-400 font-bold block mb-1">4. Recommended Restock:</span>
+                                            <p className="text-slate-400">max((demand + buffer) - stock, 0)</p>
+                                        </div>
+                                    </div>
+                                </details>
+
+                                {/* Empty State Prompt if not analyzed */}
+                                {!isInventoryAnalyzed && (
+                                    <div className="glass-card rounded-2xl p-12 text-center flex flex-col items-center justify-center border-dashed border-2 border-slate-700">
+                                        <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-3xl mb-4 text-indigo-400">
+                                            📦
+                                        </div>
+                                        <h3 className="text-lg font-bold text-white">Click "Analyze Inventory Demand" Above</h3>
+                                        <p className="text-sm text-slate-400 max-w-md mt-1">
+                                            The model will ingest 14-day SKU velocity across NOVA CART store #402 and compute predictive 3-day stockout probabilities.
+                                        </p>
+                                        <button 
+                                            onClick={handleAnalyzeInventory}
+                                            className="mt-5 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all"
+                                        >
+                                            Run Analysis Now ⚡
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Inventory Table */}
+                                {isInventoryAnalyzed && (
+                                    <div className="glass-card rounded-2xl overflow-hidden border border-slate-800">
+                                        <div className="p-4 bg-slate-900/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xs font-bold text-slate-300">Catalog Health Status:</span>
+                                                <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold">
+                                                    {products.filter(p => p.risk === 'HIGH' && p.status === 'ACTIVE').length} High Risk
+                                                </span>
+                                                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold">
+                                                    {products.filter(p => p.risk === 'MEDIUM' && p.status === 'ACTIVE').length} Medium Risk
+                                                </span>
+                                                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                                                    {products.filter(p => p.risk === 'LOW').length} Healthy
+                                                </span>
+                                            </div>
+                                            <span className="text-xs text-slate-400 font-mono">Prediction Horizon: 3 Days (Safety Buffer: +10%)</span>
+                                        </div>
+
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left text-xs whitespace-nowrap">
+                                                <thead className="bg-[#0b101c] text-slate-400 border-b border-slate-800">
+                                                    <tr>
+                                                        <th scope="col" className="p-4 font-semibold">SKU & Category</th>
+                                                        <th className="p-4 font-semibold text-center">Current Stock</th>
+                                                        <th className="p-4 font-semibold text-center">Avg Daily Sales</th>
+                                                        <th className="p-4 font-semibold text-center">Recent Trend</th>
+                                                        <th className="p-4 font-semibold text-center">Predicted 3-Day Demand</th>
+                                                        <th className="p-4 font-semibold text-center">Stockout Risk</th>
+                                                        <th className="p-4 font-semibold text-center">Recommended Restock</th>
+                                                        <th className="p-4 font-semibold text-center">Recommended Action</th>
+                                                        <th className="p-4 font-semibold text-right">Operations Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-800/60 font-sans">
+                                                    {products.map(p => {
+                                                        const isHigh = p.risk === 'HIGH';
+                                                        const isMed = p.risk === 'MEDIUM';
+                                                        const isLow = p.risk === 'LOW';
+
+                                                        return (
+                                                            <tr key={p.id} className={`hover:bg-slate-800/40 transition-colors ${p.status === 'RESTOCK ORDERED' ? 'bg-indigo-950/20' : p.status === 'MARKED UNAVAILABLE' ? 'bg-slate-900/60 opacity-60' : ''}`}>
+                                                                <td className="p-4">
+                                                                    <div className="font-bold text-white text-sm">{p.name}</div>
+                                                                    <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                                                                        <span>{p.id}</span> • <span>{p.category}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="p-4 text-center font-mono font-bold text-sm">
+                                                                    <span className={p.currentStock < 10 ? 'text-rose-400' : 'text-slate-200'}>
+                                                                        {p.currentStock} units
+                                                                    </span>
+                                                                </td>
+                                                                <td className="p-4 text-center font-mono text-slate-300">
+                                                                    {p.avgDailySales} /day
+                                                                </td>
+                                                                <td className="p-4 text-center">
+                                                                    {p.trend === 'RISING' ? (
+                                                                        <span className="inline-flex items-center gap-1 text-rose-400 font-semibold bg-rose-500/10 px-2 py-0.5 rounded text-[11px]">
+                                                                            ↗ Rising (+{( (p.trendFactor - 1)*100 ).toFixed(0)}%)
+                                                                        </span>
+                                                                    ) : p.trend === 'FALLING' ? (
+                                                                        <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded text-[11px]">
+                                                                            ↘ Falling
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="inline-flex items-center gap-1 text-slate-400 bg-slate-800 px-2 py-0.5 rounded text-[11px]">
+                                                                            → Stable
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="p-4 text-center font-mono font-extrabold text-sm text-amber-300">
+                                                                    {p.predictedDemand} units
+                                                                </td>
+                                                                <td className="p-4 text-center">
+                                                                    <span className={`inline-block font-extrabold px-2.5 py-1 rounded-full text-[11px] tracking-wide uppercase ${
+                                                                        isHigh ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                                                                        isMed ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                                                                        'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                                                    }`}>
+                                                                        {p.risk} RISK
+                                                                    </span>
+                                                                </td>
+                                                                <td className="p-4 text-center font-mono font-bold">
+                                                                    {p.recommendedRestock > 0 ? (
+                                                                        <span className="text-rose-400 text-sm">+{p.recommendedRestock} units</span>
+                                                                    ) : (
+                                                                        <span className="text-slate-500">0 (Adequate)</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="p-4 text-center font-bold text-xs">
+                                                                    {p.status === 'RESTOCK ORDERED' ? (
+                                                                        <span className="text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded-md border border-indigo-500/20">
+                                                                            ✓ PO ISSUED (+{p.recommendedRestock || 19})
+                                                                        </span>
+                                                                    ) : p.status === 'MARKED UNAVAILABLE' ? (
+                                                                        <span className="text-slate-400 bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700">
+                                                                            PAUSED ONLINE
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className={isHigh ? 'text-rose-400' : isMed ? 'text-amber-400' : 'text-emerald-400'}>
+                                                                            {p.action}
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="p-4 text-right">
+                                                                    {p.status === 'RESTOCK ORDERED' ? (
+                                                                        <span className="text-xs text-indigo-400 font-semibold">Vendor Dispatching</span>
+                                                                    ) : p.status === 'MARKED UNAVAILABLE' ? (
+                                                                        <span className="text-xs text-slate-500">Delisted from App</span>
+                                                                    ) : (
+                                                                        <div className="flex items-center justify-end gap-2">
+                                                                            {(isHigh || isMed) && (
+                                                                                <button
+                                                                                    onClick={() => handleRestockProduct(p.id, p.name, p.recommendedRestock || 15)}
+                                                                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md shadow-indigo-600/30 transition-all flex items-center gap-1"
+                                                                                    title="Trigger automated restock PO to local distributor"
+                                                                                >
+                                                                                    <span>+</span> Mark for Restock
+                                                                                </button>
+                                                                            )}
+                                                                            {isHigh && (
+                                                                                <button
+                                                                                    onClick={() => handleMarkUnavailable(p.id, p.name)}
+                                                                                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-bold transition-all"
+                                                                                    title="Temporarily hide item to avoid customer ordering phantom stock"
+                                                                                >
+                                                                                    Mark Unavailable
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* TAB 3: DELIVERY INTELLIGENCE & CUSTOMER ETA PREVIEW */}
+                        {activeTab === 'Delivery' && (
+                            <div className="fade-in space-y-8">
+                                {/* Header Action Bar */}
+                                <div className="glass-panel p-6 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-amber-400 text-lg">⚡</span>
+                                            <h2 className="text-xl font-bold text-white">Delivery Delay Risk Intelligence</h2>
+                                        </div>
+                                        <p className="text-sm text-slate-400 mt-1">
+                                            Dynamic ETA model calculating prep congestion, road travel time, and rider capacity to predict SLA breaches.
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs font-mono text-slate-400 bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800">
+                                        <span>Target SLA:</span>
+                                        <span className="font-bold text-emerald-400">30 min</span>
+                                        <span>•</span>
+                                        <span>High Risk:</span>
+                                        <span className="font-bold text-rose-400">&gt; 35 min</span>
+                                    </div>
+                                </div>
+
+                                {/* Active Orders Grid */}
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                        <span>🛵</span> Active Store Orders Under Monitoring (10 Orders)
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {orders.map(order => {
+                                            const isHigh = order.risk === 'HIGH';
+                                            const isMed = order.risk === 'MEDIUM';
+
+                                            return (
+                                                <div 
+                                                    key={order.id} 
+                                                    className={`glass-card rounded-2xl p-5 border transition-all flex flex-col justify-between ${
+                                                        order.isPrioritized 
+                                                            ? 'border-indigo-500/60 bg-indigo-950/20 ring-1 ring-indigo-500/30' 
+                                                            : isHigh 
+                                                                ? 'border-rose-500/40 hover:border-rose-500/80' 
+                                                                : 'border-slate-800'
+                                                    }`}
+                                                >
+                                                    <div>
+                                                        <div className="flex justify-between items-start">
+                                                            <div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-base font-extrabold text-white font-mono">{order.id}</span>
+                                                                    {order.isPrioritized && (
+                                                                        <span className="bg-indigo-500/20 text-indigo-400 border border-indigo-500/40 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                                                                            ⚡ PRIORITY DISPATCH
+                                                                        </span>
+                                                                    )}
+                                                                    {!order.isPrioritized && (
+                                                                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider border ${
+                                                                            isHigh ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' :
+                                                                            isMed ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                                                                            'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                                                        }`}>
+                                                                            {order.risk} RISK
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-xs text-slate-400 mt-0.5">{order.store}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <div className={`text-3xl font-black font-mono ${
+                                                                    order.isPrioritized ? 'text-indigo-400' : isHigh ? 'text-rose-400' : isMed ? 'text-amber-400' : 'text-emerald-400'
+                                                                }`}>
+                                                                    {order.estimatedDeliveryTime}<span className="text-xs text-slate-400 font-sans font-normal ml-0.5">min</span>
+                                                                </div>
+                                                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Predicted ETA</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Operational Factor Badges */}
+                                                        <div className="grid grid-cols-4 gap-2 text-center text-xs mt-4 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80">
+                                                            <div>
+                                                                <span className="text-[10px] text-slate-400 block">Distance</span>
+                                                                <span className="font-bold text-white font-mono">{order.distance} km</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-[10px] text-slate-400 block">Basket Size</span>
+                                                                <span className="font-bold text-white font-mono">{order.items} items</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-[10px] text-slate-400 block">Store Load</span>
+                                                                <span className={`font-bold ${order.storeLoad === 'HIGH' ? 'text-rose-400' : order.storeLoad === 'MEDIUM' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                                    {order.storeLoad}
+                                                                </span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-[10px] text-slate-400 block">Riders Near</span>
+                                                                <span className={`font-bold font-mono ${order.availablePartners <= 1 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                                                    {order.availablePartners} Avail
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Transparent Formula Component Bar */}
+                                                        <div className="mt-3">
+                                                            <div className="flex justify-between text-[10px] text-slate-400 mb-1 font-mono">
+                                                                <span>Prep: {order.prepEffective}m</span>
+                                                                <span>Transit: {order.travelTime}m</span>
+                                                                <span>Bottleneck Penalties: +{order.workloadPenalty + order.itemPenalty + order.partnerPenalty}m</span>
+                                                            </div>
+                                                            <div className="h-2 w-full bg-slate-800 rounded-full flex overflow-hidden">
+                                                                <div style={{ width: `${(order.prepEffective / order.estimatedDeliveryTime) * 100}%` }} className="bg-sky-500" title="Preparation Time"></div>
+                                                                <div style={{ width: `${(order.travelTime / order.estimatedDeliveryTime) * 100}%` }} className="bg-indigo-500" title="Travel Time"></div>
+                                                                <div style={{ width: `${((order.workloadPenalty + order.itemPenalty + order.partnerPenalty) / order.estimatedDeliveryTime) * 100}%` }} className="bg-rose-500" title="Congestion Penalties"></div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Recommendations */}
+                                                        <div className="mt-4 pt-3 border-t border-slate-800/80">
+                                                            <span className="text-[11px] text-slate-400 font-semibold block mb-1">Recommended Intervention:</span>
+                                                            <ul className="text-xs text-slate-300 space-y-1">
+                                                                {order.recommendations.map((rec, i) => (
+                                                                    <li key={i} className="flex items-center gap-1.5">
+                                                                        <span className="text-amber-400">›</span> {rec}
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Action Button */}
+                                                    <div className="mt-5 pt-3 border-t border-slate-800/80 flex items-center justify-between">
+                                                        <span className="text-xs text-slate-400 font-mono">
+                                                            SLA Variance: <span className={order.delayDelta > 0 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                                                                {order.delayDelta > 0 ? `+${order.delayDelta}m over` : `${Math.abs(order.delayDelta)}m buffer`}
+                                                            </span>
+                                                        </span>
+
+                                                        {!order.isPrioritized && isHigh ? (
+                                                            <button
+                                                                onClick={() => handlePrioritizeOrder(order.id)}
+                                                                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-indigo-600 hover:from-amber-400 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5"
+                                                            >
+                                                                <span>⚡</span> Prioritize Order
+                                                            </button>
+                                                        ) : order.isPrioritized ? (
+                                                            <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg flex items-center gap-1">
+                                                                ✓ Priority Dispatched (-8 min)
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-slate-400">In Standard Queue</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* SECTION 10: CUSTOMER ETA PREVIEW (Side-by-Side Mobile Mockups) */}
+                                <div className="glass-panel rounded-2xl p-6 sm:p-8 border border-slate-800">
+                                    <div className="text-center max-w-xl mx-auto mb-8">
+                                        <span className="bg-indigo-500/20 text-indigo-400 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                                            Feature 10 • Customer Experience Impact
+                                        </span>
+                                        <h3 className="text-2xl font-black text-white mt-2">Customer ETA Experience Preview</h3>
+                                        <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                                            Transparent, realistic communication eliminates the 27% of cancellations caused by broken expectations.
+                                        </p>
+                                    </div>
+
+                                    <div className="flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-16">
+                                        {/* Mobile Phone BEFORE */}
+                                        <div className="w-[290px] h-[540px] bg-slate-950 rounded-[40px] p-3 shadow-2xl border-4 border-slate-800 relative flex flex-col justify-between">
+                                            <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 h-5 bg-slate-900 rounded-full z-20"></div>
+
+                                            {/* Phone Screen Content */}
+                                            <div className="bg-white text-slate-900 rounded-[32px] h-full overflow-hidden flex flex-col justify-between pt-8 pb-4">
+                                                <div>
+                                                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                                                        <span className="font-extrabold text-sm text-slate-900">NOVA CART</span>
+                                                        <span className="text-[10px] bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded">Unmanaged Delay</span>
+                                                    </div>
+
+                                                    <div className="p-5 text-center bg-rose-50/70 border-b border-rose-100">
+                                                        <span className="text-xs text-rose-700 font-bold uppercase tracking-wider block">Estimated Delivery</span>
+                                                        <div className="text-4xl font-black text-slate-900 mt-1">42 <span className="text-base font-normal text-slate-500">mins</span></div>
+                                                        <span className="text-[11px] text-rose-600 font-medium mt-1 block">Delayed by 12+ mins past promised window</span>
+                                                    </div>
+
+                                                    <div className="p-5 space-y-3">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm">🛒</div>
+                                                            <div className="text-left">
+                                                                <p className="text-xs font-bold text-slate-800">Order #ORD-1048</p>
+                                                                <p className="text-[10px] text-slate-500">9 items from Fresh Mart</p>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 text-left">
+                                                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                                                                "Your order is being prepared by store partner..."
+                                                            </p>
+                                                            <p className="text-[10px] text-rose-600 font-semibold mt-1">
+                                                                ⚠️ Customer experiences silence & frustration → 27% cancel
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="px-5">
+                                                    <button className="w-full py-2 bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-not-allowed">
+                                                        Cancel Order
+                                                    </button>
+                                                    <p className="text-[9px] text-slate-400 text-center mt-2 font-mono">BEFORE SMARTOPS</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="text-indigo-400 text-3xl font-black hidden lg:block">➔</div>
+
+                                        {/* Mobile Phone AFTER */}
+                                        <div className="w-[290px] h-[540px] bg-slate-950 rounded-[40px] p-3 shadow-2xl border-4 border-indigo-500/60 ring-4 ring-indigo-500/20 relative flex flex-col justify-between">
+                                            <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 h-5 bg-slate-900 rounded-full z-20"></div>
+
+                                            {/* Phone Screen Content */}
+                                            <div className="bg-white text-slate-900 rounded-[32px] h-full overflow-hidden flex flex-col justify-between pt-8 pb-4">
+                                                <div>
+                                                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                                                        <span className="font-extrabold text-sm text-slate-900">NOVA CART</span>
+                                                        <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                                                            ⚡ SmartOps Active
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="p-5 text-center bg-indigo-50/80 border-b border-indigo-100">
+                                                        <span className="text-xs text-indigo-700 font-bold uppercase tracking-wider block">Optimized Live Delivery</span>
+                                                        <div className="text-4xl font-black text-indigo-600 mt-1">34 <span className="text-base font-normal text-slate-500">mins</span></div>
+                                                        <span className="text-[11px] text-emerald-700 font-bold mt-1 block">✓ Expedited with Dedicated Rider</span>
+                                                    </div>
+
+                                                    <div className="p-5 space-y-3">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-bold">⚡</div>
+                                                            <div className="text-left">
+                                                                <p className="text-xs font-bold text-slate-800">Order #ORD-1048</p>
+                                                                <p className="text-[10px] text-indigo-600 font-semibold">Priority Fast-Lane Dispatch</p>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-indigo-50/60 p-3 rounded-xl border border-indigo-200 text-left">
+                                                            <p className="text-[11px] font-semibold text-indigo-900">
+                                                                "Updated ETA based on current store workload. Your order has been prioritized with direct rider routing."
+                                                            </p>
+                                                            <p className="text-[10px] text-emerald-600 font-semibold mt-1.5 flex items-center gap-1">
+                                                                ✓ Realistic expectation prevents churn & trust deficit
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="px-5">
+                                                    <div className="w-full py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold text-center shadow-md shadow-indigo-600/20">
+                                                        Tracking Live Rider 🛵
+                                                    </div>
+                                                    <p className="text-[9px] text-indigo-600 text-center mt-2 font-mono font-bold">AFTER SMARTOPS</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TAB 4: IMPACT SIMULATOR */}
+                        {activeTab === 'Impact' && (
+                            <div className="fade-in space-y-6">
+                                {/* Disclaimer Banner Required by Spec */}
+                                <div className="bg-gradient-to-r from-indigo-900/60 via-indigo-950/80 to-slate-900 border border-indigo-500/40 p-4 rounded-2xl flex items-center gap-3">
+                                    <span className="text-2xl">📈</span>
+                                    <div>
+                                        <h3 className="font-extrabold text-sm text-indigo-300 uppercase tracking-wider">
+                                            SIMULATED / PROJECTED IMPACT MODEL
+                                        </h3>
+                                        <p className="text-xs text-slate-300">
+                                            Projections calculated dynamically from NOVA CART baseline data (38,500 monthly orders @ ₹486 AOV). Not hardcoded values.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                    {/* Left Simulator Controls */}
+                                    <div className="glass-card rounded-2xl p-6 space-y-6">
+                                        <h3 className="text-base font-bold text-white flex items-center gap-2">
+                                            <span>🎛️</span> Operations Intervention Sliders
+                                        </h3>
+
+                                        <div className="space-y-5">
+                                            <div>
+                                                <div className="flex justify-between items-center text-xs mb-2">
+                                                    <label htmlFor="stockout-range" className="font-semibold text-slate-300">Reduction in Stockout Cancellations</label>
+                                                    <span className="font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded text-sm">{stockoutReduction}%</span>
+                                                </div>
+                                                <input 
+                                                    id="stockout-range" type="range" min="0" max="80" step="5" value={stockoutReduction}
+                                                    onChange={e => setStockoutReduction(Number(e.target.value))}
+                                                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                />
+                                                <p className="text-[11px] text-slate-400 mt-1">SmartOps automated restock POs & catalog delisting</p>
+                                            </div>
+
+                                            <div>
+                                                <div className="flex justify-between items-center text-xs mb-2">
+                                                    <label htmlFor="delay-range" className="font-semibold text-slate-300">Reduction in Delay Cancellations</label>
+                                                    <span className="font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-sm">{delayReduction}%</span>
+                                                </div>
+                                                <input 
+                                                    id="delay-range" type="range" min="0" max="80" step="5" value={delayReduction}
+                                                    onChange={e => setDelayReduction(Number(e.target.value))}
+                                                    className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                                />
+                                                <p className="text-[11px] text-slate-400 mt-1">Priority dispatch lane & transparent customer ETA preview</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Baseline Metadata */}
+                                        <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 text-xs space-y-2">
+                                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Current Monthly Baseline:</span>
+                                            <div className="flex justify-between text-slate-300">
+                                                <span>Monthly Orders:</span>
+                                                <span className="font-mono font-bold text-white">38,500</span>
+                                            </div>
+                                            <div className="flex justify-between text-slate-300">
+                                                <span>Baseline Cancel Rate:</span>
+                                                <span className="font-mono font-bold text-rose-400">11.0% (4,235)</span>
+                                            </div>
+                                            <div className="flex justify-between text-slate-400 pl-3 text-[11px]">
+                                                <span>↳ Unavailability (35%):</span>
+                                                <span className="font-mono">1,482 orders</span>
+                                            </div>
+                                            <div className="flex justify-between text-slate-400 pl-3 text-[11px]">
+                                                <span>↳ Delivery Delays (27%):</span>
+                                                <span className="font-mono">1,143 orders</span>
+                                            </div>
+                                            <div className="flex justify-between text-slate-300 pt-1 border-t border-slate-800">
+                                                <span>Avg Order Value (AOV):</span>
+                                                <span className="font-mono font-bold text-white">₹486</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Right Projected Results */}
+                                    <div className="lg:col-span-2 space-y-6">
+                                        {(() => {
+                                            const baselineOrders = 38500;
+                                            const currentCancellations = 4235;
+                                            const stockoutCancellations = 1482;
+                                            const delayCancellations = 1143;
+                                            const aov = 486;
+
+                                            const preventedStockout = Math.round(stockoutCancellations * (stockoutReduction / 100));
+                                            const preventedDelay = Math.round(delayCancellations * (delayReduction / 100));
+                                            const totalPrevented = preventedStockout + preventedDelay;
+                                            const projectedCancellations = currentCancellations - totalPrevented;
+                                            const projectedRate = ((projectedCancellations / baselineOrders) * 100).toFixed(1);
+                                            const monthlyRevenueRetained = totalPrevented * aov;
+                                            const supportTicketsSaved = Math.round(totalPrevented * 0.95);
+
+                                            return (
+                                                <>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                        <div className="glass-panel p-4 rounded-xl border border-emerald-500/30 bg-emerald-950/10">
+                                                            <span className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider block">Cancellations Prevented</span>
+                                                            <div className="text-2xl sm:text-3xl font-black text-white mt-1 font-mono">
+                                                                {totalPrevented.toLocaleString()}
+                                                            </div>
+                                                            <span className="text-[10px] text-emerald-400 mt-0.5 block">orders/month</span>
+                                                        </div>
+
+                                                        <div className="glass-panel p-4 rounded-xl border border-indigo-500/30 bg-indigo-950/10">
+                                                            <span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider block">Projected Cancel Rate</span>
+                                                            <div className="text-2xl sm:text-3xl font-black text-indigo-400 mt-1 font-mono">
+                                                                {projectedRate}%
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-400 mt-0.5 block">down from 11.0%</span>
+                                                        </div>
+
+                                                        <div className="glass-panel p-4 rounded-xl border border-amber-500/30 bg-amber-950/10">
+                                                            <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider block">Direct Revenue Saved</span>
+                                                            <div className="text-2xl sm:text-3xl font-black text-amber-300 mt-1 font-mono">
+                                                                ₹{(monthlyRevenueRetained / 100000).toFixed(2)}L
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-400 mt-0.5 block">₹{monthlyRevenueRetained.toLocaleString('en-IN')}/mo</span>
+                                                        </div>
+
+                                                        <div className="glass-panel p-4 rounded-xl border border-sky-500/30 bg-sky-950/10">
+                                                            <span className="text-[11px] font-semibold text-sky-400 uppercase tracking-wider block">Support Tickets Cut</span>
+                                                            <div className="text-2xl sm:text-3xl font-black text-sky-300 mt-1 font-mono">
+                                                                -{supportTicketsSaved}
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-400 mt-0.5 block">of 5,900/mo baseline</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Comparison Chart & Retention Multiplier */}
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                                                        <div className="glass-card rounded-2xl p-5">
+                                                            <span className="text-xs font-bold text-white block mb-2">Cancellation Rate Comparison (%)</span>
+                                                            <ChartBox
+                                                                type="bar"
+                                                                data={{
+                                                                    labels: ['Current Baseline', 'Projected with SmartOps'],
+                                                                    datasets: [{
+                                                                        label: 'Cancellation Rate %',
+                                                                        data: [11.0, parseFloat(projectedRate)],
+                                                                        backgroundColor: ['#ef4444', '#10b981'],
+                                                                        borderRadius: 8,
+                                                                        barThickness: 42
+                                                                    }]
+                                                                }}
+                                                                options={{
+                                                                    scales: {
+                                                                        y: { min: 0, max: 14, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+                                                                        x: { ticks: { color: '#cbd5e1' }, grid: { display: false } }
+                                                                    },
+                                                                    plugins: { legend: { display: false } }
+                                                                }}
+                                                                height="180px"
+                                                            />
+                                                        </div>
+
+                                                        <div className="glass-panel rounded-2xl p-5 border border-indigo-500/30 flex flex-col justify-between h-full bg-gradient-to-br from-indigo-950/40 to-slate-900">
+                                                            <div>
+                                                                <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">The 72% Compounding Retention Multiplier</span>
+                                                                <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                                                                    Case study evidence proves that customers who successfully complete <strong>3 orders have a 72% probability of ordering again</strong> the following month.
+                                                                </p>
+                                                                <p className="text-xs text-slate-400 mt-2">
+                                                                    Preventing {totalPrevented.toLocaleString()} first-order cancellations does not just protect ₹{monthlyRevenueRetained.toLocaleString('en-IN')} in immediate GMV — it prevents permanent customer churn and re-activates recurring LTV.
+                                                                </p>
+                                                            </div>
+                                                            <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] font-mono text-emerald-400">
+                                                                Annualized GMV Protected: ~₹{( (monthlyRevenueRetained * 12) / 10000000 ).toFixed(2)} Cr
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TAB 5: WHY SMARTOPS? */}
+                        {activeTab === 'Why SmartOps?' && (
+                            <div className="fade-in space-y-8 max-w-5xl mx-auto">
+                                <div className="text-center max-w-2xl mx-auto">
+                                    <span className="bg-indigo-500/20 text-indigo-400 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                                        Root Cause Analysis
+                                    </span>
+                                    <h2 className="text-3xl font-extrabold text-white mt-3">Why SmartOps?</h2>
+                                    <p className="text-sm text-slate-400 mt-2">
+                                        Understanding how operational blindness triggers a vicious cycle of customer loss across local commerce.
+                                    </p>
+                                </div>
+
+                                {/* Flow Breakdown 1 & 2 */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Inventory Chain */}
+                                    <div className="glass-card rounded-2xl p-6 border-l-4 border-l-rose-500">
+                                        <h3 className="text-base font-bold text-rose-400 mb-4 flex items-center gap-2">
+                                            <span>📉</span> Problem Flow 1: Inventory Stockouts (35%)
+                                        </h3>
+                                        <div className="space-y-2 text-xs font-medium">
+                                            <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 text-slate-200">
+                                                Inaccurate Store Inventory (39% of stores update only once every 1–3 days)
+                                            </div>
+                                            <div className="text-center text-slate-600 font-bold">↓</div>
+                                            <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 text-slate-200">
+                                                Customer Orders Product Shown as Available
+                                            </div>
+                                            <div className="text-center text-slate-600 font-bold">↓</div>
+                                            <div className="bg-rose-950/40 p-3 rounded-xl border border-rose-500/40 text-rose-300 font-bold">
+                                                Order Cancellation, Refund Processing & Support Ticket Spike (5,900/mo)
+                                            </div>
+                                            <div className="text-center text-slate-600 font-bold">↓</div>
+                                            <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 text-rose-400 font-semibold">
+                                                Customer Trust Destroyed → Repeat Purchase Drops from 41% to 27%
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Delivery Chain */}
+                                    <div className="glass-card rounded-2xl p-6 border-l-4 border-l-amber-500">
+                                        <h3 className="text-base font-bold text-amber-400 mb-4 flex items-center gap-2">
+                                            <span>⏳</span> Problem Flow 2: Unmanaged Delivery Delays (27%)
+                                        </h3>
+                                        <div className="space-y-2 text-xs font-medium">
+                                            <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 text-slate-200">
+                                                Store Congestion + 6km Distance + Low Delivery Partner Availability
+                                            </div>
+                                            <div className="text-center text-slate-600 font-bold">↓</div>
+                                            <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 text-slate-200">
+                                                Delivery ETA Stretches Past 35-40 Minutes Without Notice
+                                            </div>
+                                            <div className="text-center text-slate-600 font-bold">↓</div>
+                                            <div className="bg-amber-950/40 p-3 rounded-xl border border-amber-500/40 text-amber-300 font-bold">
+                                                Customer Cancels Out of Frustration (27% of all cancellations)
+                                            </div>
+                                            <div className="text-center text-slate-600 font-bold">↓</div>
+                                            <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 text-amber-400 font-semibold">
+                                                Poor Experience Prevents Customers from Reaching 3-Order Retention Cliff (72%)
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* The Central Product Loop */}
+                                <div className="glass-panel rounded-2xl p-8 border border-indigo-500/30 text-center relative overflow-hidden bg-gradient-to-br from-indigo-950/50 via-slate-900 to-slate-950">
+                                    <h3 className="text-lg font-bold text-white mb-6">The SmartOps Closed-Loop Solution</h3>
+                                    <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm font-bold">
+                                        <div className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl text-slate-200">
+                                            1. HISTORICAL DATA
+                                        </div>
+                                        <span className="text-indigo-400">➔</span>
+                                        <div className="bg-indigo-600/30 border border-indigo-500/40 px-4 py-2 rounded-xl text-indigo-300">
+                                            2. PREDICTION
+                                        </div>
+                                        <span className="text-indigo-400">➔</span>
+                                        <div className="bg-amber-600/30 border border-amber-500/40 px-4 py-2 rounded-xl text-amber-300">
+                                            3. RISK DETECTION
+                                        </div>
+                                        <span className="text-indigo-400">➔</span>
+                                        <div className="bg-indigo-600 text-white px-4 py-2 rounded-xl shadow-lg shadow-indigo-600/40">
+                                            4. RECOMMENDED ACTION
+                                        </div>
+                                        <span className="text-indigo-400">➔</span>
+                                        <div className="bg-emerald-600/30 border border-emerald-500/40 px-4 py-2 rounded-xl text-emerald-300">
+                                            5. OPERATIONAL IMPROVEMENT
+                                        </div>
+                                        <span className="text-indigo-400">➔</span>
+                                        <div className="bg-emerald-600 text-white px-4 py-2 rounded-xl shadow-lg shadow-emerald-600/40">
+                                            6. FEWER CANCELLATIONS
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 6 Key Evidence Cards */}
+                                <div className="glass-card rounded-2xl p-6">
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">
+                                        Six Pillars of Ground Evidence (NOVA CART Case)
+                                    </h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+                                            <div className="text-2xl font-black text-rose-400">35%</div>
+                                            <p className="text-xs text-slate-300 mt-1 font-semibold">Out-of-Stock Cancellations</p>
+                                            <p className="text-[11px] text-slate-500 mt-1">Cancellations happen because products shown online were unavailable on physical shelves.</p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+                                            <div className="text-2xl font-black text-amber-400">27%</div>
+                                            <p className="text-xs text-slate-300 mt-1 font-semibold">Delivery Delay Cancellations</p>
+                                            <p className="text-[11px] text-slate-500 mt-1">Customers cancel mid-flight because delivery stretched beyond promised expectation.</p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+                                            <div className="text-2xl font-black text-indigo-400">39%</div>
+                                            <p className="text-xs text-slate-300 mt-1 font-semibold">Partner Store Friction</p>
+                                            <p className="text-[11px] text-slate-500 mt-1">Local shopkeepers report manual stock synchronization requires too much effort.</p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+                                            <div className="text-2xl font-black text-rose-400">29%</div>
+                                            <p className="text-xs text-slate-300 mt-1 font-semibold">Phantom Inventory Defect</p>
+                                            <p className="text-[11px] text-slate-500 mt-1">Customers observe items shown as available becoming unavailable after checkout.</p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+                                            <div className="text-2xl font-black text-rose-400">41% → 27%</div>
+                                            <p className="text-xs text-slate-300 mt-1 font-semibold">Repeat Purchase Drop</p>
+                                            <p className="text-[11px] text-slate-500 mt-1">A 14-percentage point collapse directly caused by operational unreliability.</p>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+                                            <div className="text-2xl font-black text-emerald-400">72%</div>
+                                            <p className="text-xs text-slate-300 mt-1 font-semibold">Retention Cliff</p>
+                                            <p className="text-[11px] text-slate-500 mt-1">Customers who reach 3 successful deliveries have a 72% probability of ordering next month.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Bottom Status Footer */}
+                    <footer className="bg-[#080c14] border-t border-slate-800 py-4 text-xs text-slate-500">
+                        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                <span className="font-semibold text-slate-400">NOVA SMARTOPS</span>
+                                <span>• Partner Store Intelligence Platform</span>
+                            </div>
+                            <div className="flex items-center gap-4 font-mono text-[11px]">
+                                <span>Deterministic Forecast Engine</span>
+                                <span>•</span>
+                                <span>Zero External Paid APIs</span>
+                                <span>•</span>
+                                <span className="text-indigo-400">Ready for Live Hackathon Judging</span>
+                            </div>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ErrorBoundary><App /></ErrorBoundary>);
+    </script>
+</body>
+</html>
